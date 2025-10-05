@@ -1,0 +1,74 @@
+name: Docs Quality
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  docs-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Make scripts executable
+        run: chmod +x scripts/verify-structure.sh || true
+
+      - name: Verify structure
+        run: ./scripts/verify-structure.sh
+
+      - name: Install Node (for markdown tools)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install markdown linters
+        run: |
+          npm i -g markdownlint-cli2 markdown-link-check
+
+      - name: Lint Markdown
+        run: |
+          markdownlint-cli2 "**/*.md"
+
+      - name: Check links in Markdown
+        run: |
+          # переберём все md и проверим ссылки
+          set -e
+          shopt -s globstar
+          for f in **/*.md; do
+            echo "🔗 Checking $f"
+            markdown-link-check -q -c '{ "timeout": "10s" }' "$f"
+          done
+
+      - name: Validate JSON files (if any)
+        run: |
+          sudo apt-get update && sudo apt-get install -y jq
+          if ls **/*.json >/dev/null 2>&1; then
+            for f in $(ls **/*.json); do
+              echo "🧪 JSON $f"
+              jq . "$f" >/dev/null
+            done
+          else
+            echo "No JSON files to validate"
+          fi
+
+      - name: Validate YAML files (if any)
+        run: |
+          python - <<'PY'
+import os, sys, yaml
+ok=True
+for root,_,files in os.walk('.'):
+    for name in files:
+        if name.lower().endswith(('.yml','.yaml')):
+            path=os.path.join(root,name)
+            try:
+                with open(path,'r',encoding='utf-8') as f:
+                    yaml.safe_load(f)
+                print("🧪 YAML", path)
+            except Exception as e:
+                print("❌ YAML error in", path, ":", e)
+                ok=False
+print("YAML check OK" if ok else "YAML check FAILED")
+sys.exit(0 if ok else 1)
+PY
