@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+
+    steps:
+      # 1️⃣ Клонируем твой репозиторий
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2️⃣ Устанавливаем .NET 8
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      # 3️⃣ Поднимаем MSSQL для интеграционных тестов
+      - name: Start MSSQL in Docker
+        shell: bash
+        run: |
+          docker run -d --name mssql -e 'ACCEPT_EULA=Y' \
+            -e 'SA_PASSWORD=Your_strong_password123' \
+            -p 1433:1433 mcr.microsoft.com/mssql/server:2022-latest
+          echo "⏳ Ждём, пока SQL поднимется..."
+          sleep 25
+
+      # 4️⃣ Сборка проекта
+      - name: Build solution
+        run: dotnet build --configuration Release --no-restore
+
+      # 5️⃣ Прогон всех тестов
+      - name: Run all tests
+        run: dotnet test --configuration Release --no-build --logger "trx;LogFileName=test_results.trx"
+
+      # 6️⃣ (необязательно) — вывод результатов
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: '**/TestResults/*.trx'
